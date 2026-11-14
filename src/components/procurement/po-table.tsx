@@ -1,3 +1,5 @@
+"use client";
+
 import React from "react";
 import { type PoDocKind } from "@/lib/procurement";
 import type { PoListRow } from "@/lib/queries/procurement";
