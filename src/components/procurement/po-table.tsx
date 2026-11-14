@@ -12,11 +12,20 @@ const DOC_LABEL: Record<PoDocKind, string> = {
 };
 
 export type PoTableProps = {
-  orders: PoListRow[];
+  orders?: PoListRow[];
+  rows?: PoListRow[]; // Added to match procurement-view usage
+  selected?: string | null;
+  query?: string;
+  dates?: Record<string, string>;
+  sort?: any;
+  filtered?: boolean;
+  hasAny?: boolean;
   onSelectPo?: (poNumber: string) => void;
 };
 
-export function PoTable({ orders, onSelectPo }: PoTableProps) {
+export function PoTable({ orders, rows, onSelectPo }: PoTableProps) {
+  const data = orders || rows || [];
+
   return (
     <div className="overflow-x-auto rounded-md border">
       <table className="w-full text-left text-sm">
@@ -31,7 +40,7 @@ export function PoTable({ orders, onSelectPo }: PoTableProps) {
           </tr>
         </thead>
         <tbody className="divide-y">
-          {orders.map((order) => (
+          {data.map((order) => (
             <tr
               key={order.id}
               className="hover:bg-muted/30 cursor-pointer transition-colors"
@@ -76,7 +85,7 @@ export function PoTable({ orders, onSelectPo }: PoTableProps) {
               </td>
             </tr>
           ))}
-          {orders.length === 0 && (
+          {data.length === 0 && (
             <tr>
               <td colSpan={6} className="p-6 text-center text-muted-foreground">
                 No purchase orders found.

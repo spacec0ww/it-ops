@@ -8,6 +8,7 @@ export type DocSlotProps = {
   invoiceDate?: string | null;
   today?: string;
   status?: "ok" | "miss" | "na";
+  state?: "ok" | "miss" | "na"; // Added to support state prop from po-panel
   doc?: { id: string; fileName: string; originalName: string | null; sizeBytes: number };
   notNeededUntil?: string;
   fileName?: string | null;
@@ -34,6 +35,7 @@ export function DocSlot({
   originalName,
   sizeBytes,
   status = "ok",
+  state = "ok",
   onUpload,
   onRemove,
   onDownload,
@@ -41,6 +43,7 @@ export function DocSlot({
   const activeFileName = fileName || doc?.fileName;
   const activeOriginalName = originalName || doc?.originalName;
   const activeSizeBytes = sizeBytes || doc?.sizeBytes;
+  const activeStatus = status || state;
   const label = DOC_LABELS[kind] ?? kind;
 
   return (
@@ -52,7 +55,7 @@ export function DocSlot({
             {activeOriginalName || activeFileName} ({activeSizeBytes ? `${Math.round(activeSizeBytes / 1024)} KB` : ""})
           </span>
         ) : (
-          <span className="text-xs text-muted-foreground italic">No file attached ({status})</span>
+          <span className="text-xs text-muted-foreground italic">No file attached ({activeStatus})</span>
         )}
       </div>
       <div className="flex items-center space-x-2">
