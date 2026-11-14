@@ -1,3 +1,6 @@
+"use client";
+
+import React from "react";
 import { CheckIcon } from "lucide-react";
 import { Aed, BaseCurrency } from "@/components/aed";
 import { formatDate } from "@/lib/dates";
@@ -33,7 +36,6 @@ export function PoPanel({
 }) {
   const current = stageIndex(po.status);
   const next = nextManualStage(po.status);
-  // Closing needs the quotations, approval, and invoice (delivery note is optional).
   const missingForClose = next === "closed" ? missingToClose(Object.keys(po.documents)) : [];
 
   return (
@@ -53,7 +55,7 @@ export function PoPanel({
                 requestedOn: po.requestedOn,
                 notes: po.notes,
                 invoiceNumber: po.invoiceNumber,
-                lpoNumber: po.lpoNumber, // <-- Corrected from po.poNumber
+                lpoNumber: po.lpoNumber,
                 vatApplied: po.vatApplied,
                 discountAed: po.discountAed,
                 project: po.project,
@@ -218,7 +220,6 @@ export function PoPanel({
   );
 }
 
-/** Subtotal / Discount / VAT 5% / Total under the lines (Discount and VAT only when used). */
 function PoMoneyRows({ money, vat }: { money: PoTotal; vat: boolean }) {
   const rows: { label: string; value: number; negative?: boolean; strong?: boolean }[] = [
     { label: "Subtotal", value: money.subtotal },
@@ -252,7 +253,6 @@ function PoMoneyRows({ money, vat }: { money: PoTotal; vat: boolean }) {
   );
 }
 
-/** Empty panel when nothing is selected or the PO doesn't exist. */
 export function PoPanelEmpty({ message }: { message: string }) {
   return (
     <aside className="panel min-[1024px]:flex-[2_1_360px]" aria-label="Purchase detail">

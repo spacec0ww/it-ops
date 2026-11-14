@@ -1,20 +1,16 @@
-import type { Metadata } from "next";
-import { requireUser } from "@/lib/auth";
-import { PO_NUMBER_PATTERN } from "@/lib/ids";
-import { ProcurementView } from "@/components/procurement/procurement-view";
+"use client";
 
-/** The tab and history name the selected purchase, e.g. "PO-2026-0159 · Procurement". */
-export async function generateMetadata({
-  searchParams,
-}: PageProps<"/procurement">): Promise<Metadata> {
-  const po = (await searchParams).po;
-  const number = typeof po === "string" ? po.toUpperCase() : null;
-  return {
-    title: number && PO_NUMBER_PATTERN.test(number) ? `${number} · Procurement` : "Procurement",
-  };
-}
-
-export default async function ProcurementPage({ searchParams }: PageProps<"/procurement">) {
-  await requireUser();
-  return <ProcurementView params={await searchParams} />;
-}
+import { ViewTabs } from "@/components/view-tabs";
+import { ExportButton } from "@/components/export-button";
+import { ListFilter } from "@/components/list-controls";
+import { todayIn } from "@/lib/dates";
+import { formatShortDate, quarterOf } from "@/lib/format";
+import { PO_STAGES, STAGE_LABEL, type PoStage } from "@/lib/procurement";
+import type { PoDetail, PoListRow } from "@/lib/queries/procurement";
+import { filterRows, parseSort, sortParam, sortRows, textParam } from "@/lib/list-view";
+import { keysOf, PO_SORT_COLUMNS, PO_SORTS, poSearchFields } from "@/lib/list-sorts";
+import { Aed } from "@/components/aed";
+import { DetailSheet } from "@/components/detail-sheet";
+import { PoTable } from "@/components/procurement/po-table";
+import { PoPanel, PoPanelEmpty } from "@/components/procurement/po-panel";
+import { MissingToggle, NewPurchase } from "@/components/procurement/controls";
