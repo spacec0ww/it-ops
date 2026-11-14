@@ -3,10 +3,16 @@ import { type PoDocKind } from "@/lib/procurement";
 
 export type DocSlotProps = {
   kind: PoDocKind;
+  poId?: string;
+  poNumber?: string;
+  invoiceDate?: string | null;
+  today?: string;
+  status?: "ok" | "miss" | "na";
+  doc?: { id: string; fileName: string; originalName: string | null; sizeBytes: number };
+  notNeededUntil?: string;
   fileName?: string | null;
   originalName?: string | null;
   sizeBytes?: number;
-  status?: "ok" | "miss" | "na";
   onUpload?: (file: File) => void;
   onRemove?: () => void;
   onDownload?: () => void;
@@ -23,6 +29,7 @@ const DOC_LABELS: Record<PoDocKind, string> = {
 
 export function DocSlot({
   kind,
+  doc,
   fileName,
   originalName,
   sizeBytes,
@@ -31,22 +38,25 @@ export function DocSlot({
   onRemove,
   onDownload,
 }: DocSlotProps) {
+  const activeFileName = fileName || doc?.fileName;
+  const activeOriginalName = originalName || doc?.originalName;
+  const activeSizeBytes = sizeBytes || doc?.sizeBytes;
   const label = DOC_LABELS[kind] ?? kind;
 
   return (
     <div className="flex items-center justify-between p-3 border rounded-lg bg-card text-card-foreground shadow-sm">
       <div className="flex flex-col space-y-1">
         <span className="font-medium text-sm">{label}</span>
-        {fileName ? (
+        {activeFileName ? (
           <span className="text-xs text-muted-foreground truncate max-w-[200px]">
-            {originalName || fileName} ({sizeBytes ? `${Math.round(sizeBytes / 1024)} KB` : ""})
+            {activeOriginalName || activeFileName} ({activeSizeBytes ? `${Math.round(activeSizeBytes / 1024)} KB` : ""})
           </span>
         ) : (
-          <span className="text-xs text-muted-foreground italic">No file attached</span>
+          <span className="text-xs text-muted-foreground italic">No file attached ({status})</span>
         )}
       </div>
       <div className="flex items-center space-x-2">
-        {fileName ? (
+        {activeFileName ? (
           <>
             {onDownload && (
               <button
