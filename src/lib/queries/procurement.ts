@@ -1,9 +1,9 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import type { Tx } from "@/db/actor";
 import { getDb } from "@/db";
 import { documents, poLines, purchaseOrders, vendors } from "@/db/schema";
 import { poTotals } from "@/db/schema";
-import { poTotal, type PoStage, type PoTotal } from "@/lib/procurement";
+import { poTotal, type PoStage, type PoTotal, type PoDocKind } from "@/lib/procurement";
 
 export type PoListRow = {
   id: string;
@@ -13,8 +13,11 @@ export type PoListRow = {
   totalAed: number;
   status: PoStage;
   requestedOn: string;
+  project: string | null;
+  invoiceNumber: string | null;
+  money: PoTotal;
   docs: { kind: string; state: "ok" | "miss" | "na" }[];
-  missing: string[];
+  missing: PoDocKind[];
 };
 
 export type PoDetail = {
@@ -55,6 +58,10 @@ export async function listPurchaseOrders(transaction?: Tx): Promise<PoListRow[]>
         vendor: vendors.name,
         status: purchaseOrders.status,
         requestedOn: purchaseOrders.requestedOn,
+        project: purchaseOrders.project,
+        invoiceNumber: purchaseOrders.invoiceNumber,
+        vatApplied: purchaseOrders.vatApplied,
+        discountAed: purchaseOrders.discountAed,
       })
       .from(purchaseOrders)
       .innerJoin(vendors, eq(vendors.id, purchaseOrders.vendorId))
@@ -64,6 +71,7 @@ export async function listPurchaseOrders(transaction?: Tx): Promise<PoListRow[]>
         poId: poLines.poId,
         description: poLines.description,
         qty: poLines.qty,
+        unitPriceAed: poLines.unitPriceAed,
       })
       .from(poLines),
     executor
@@ -76,7 +84,7 @@ export async function listPurchaseOrders(transaction?: Tx): Promise<PoListRow[]>
     executor.select().from(poTotals),
   ]);
 
-  const linesMap = new Map<string, { qty: number; description: string }[]>();
+  const linesMap = new Map<string, { qty: number; description: string; unitPriceAed: number }[]>();
   for (const l of lines) {
     const list = linesMap.get(l.poId) ?? [];
     list.push(l);
@@ -95,10 +103,18 @@ export async function listPurchaseOrders(transaction?: Tx): Promise<PoListRow[]>
   return pos.map((p) => {
     const poLinesList = linesMap.get(p.id) ?? [];
     const attachedKinds = docsMap.get(p.id) ?? new Set();
-    const totalAed = totalsMap.get(p.id) ?? 0;
+
+    const subtotal = poLinesList.reduce((sum, l) => sum + l.qty * Number(l.unitPriceAed), 0);
+    const money = poTotal({
+      subtotal,
+      discount: Number(p.discountAed),
+      vat: p.vatApplied,
+    });
+
+    const totalAed = totalsMap.get(p.id) ?? money.total;
 
     const summary = poLinesList
-      .map((l: { qty: number; description: string }) => `${l.qty}× ${l.description.split(",")[0]!.trim()}`)
+      .map((l) => `${l.qty}× ${l.description.split(",")[0]!.trim()}`)
       .join(", ");
 
     const docsState = ["quote_1", "quote_2", "quote_3", "approval", "invoice", "delivery_note"].map(
@@ -120,7 +136,7 @@ export async function listPurchaseOrders(transaction?: Tx): Promise<PoListRow[]>
       },
     );
 
-    const missing = docsState.filter((d) => d.state === "miss").map((d) => d.kind);
+    const missing = docsState.filter((d) => d.state === "miss").map((d) => d.kind as PoDocKind);
 
     return {
       id: p.id,
@@ -130,6 +146,9 @@ export async function listPurchaseOrders(transaction?: Tx): Promise<PoListRow[]>
       totalAed,
       status: p.status,
       requestedOn: p.requestedOn,
+      project: p.project,
+      invoiceNumber: p.invoiceNumber,
+      money,
       docs: docsState,
       missing,
     };
@@ -186,7 +205,7 @@ export async function getPurchaseOrder(poNumber: string, transaction?: Tx): Prom
       .where(eq(poTotals.poId, po.id)),
   ]);
 
-  const subtotal = lines.reduce((sum: number, l: { qty: number; unitPriceAed: number }) => sum + l.qty * Number(l.unitPriceAed), 0);
+  const subtotal = lines.reduce((sum, l) => sum + l.qty * Number(l.unitPriceAed), 0);
   const money = poTotal({
     subtotal,
     discount: Number(po.discountAed),
@@ -218,7 +237,7 @@ export async function getPurchaseOrder(poNumber: string, transaction?: Tx): Prom
     invoiceDate: po.invoiceDate,
     totalAed: totalRow[0]?.totalAed ?? money.total,
     money,
-    lines: lines.map((l: { id: string; description: string; qty: number; unitPriceAed: number }) => ({
+    lines: lines.map((l) => ({
       id: l.id,
       description: l.description,
       qty: l.qty,
