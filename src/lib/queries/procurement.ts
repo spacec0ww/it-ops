@@ -1,161 +1,167 @@
-import "server-only";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
+import type { Tx } from "@/db/actor";
 import { getDb } from "@/db";
-import { todayIn } from "@/lib/dates";
-import { getTimeZone } from "@/lib/queries/settings";
-import { conventionalDocumentName } from "@/lib/document-names";
-import { documents, poLines, poTotals, purchaseOrders, vendors } from "@/db/schema";
-import {
-  docStates,
-  lineSummary,
-  missingDocKinds,
-  poTotal,
-  type PoTotal,
-  PO_DOC_KINDS,
-  type PoDocKind,
-  type PoStage,
-} from "@/lib/procurement";
-
-/**
- * SQL for a purchase's grand total, the same rule as `poTotal()`: the discount comes off the
- * lines' sum, then 5% VAT when ticked. (The `po_totals` view still holds the plain line sum.)
- */
-const grandTotalSql = sql`(
-  greatest(0, ${poTotals.totalAed} - ${purchaseOrders.discountAed})
-  + case when ${purchaseOrders.vatApplied}
-      then round(greatest(0, ${poTotals.totalAed} - ${purchaseOrders.discountAed}) * 0.05, 2)
-      else 0 end
-)`;
+import { documents, poLines, purchaseOrders, vendors } from "@/db/schema";
+import { poTotals } from "@/db/schema";
+import { poTotal, type PoStage, type PoTotal } from "@/lib/procurement";
 
 export type PoListRow = {
   id: string;
   poNumber: string;
   vendor: string;
-  project: string | null;
-  invoiceNumber: string | null;
+  summary: string;
+  totalAed: number;
   status: PoStage;
   requestedOn: string;
-  /** The grand total: lines less the discount, plus VAT when applied. */
-  totalAed: number;
-  money: PoTotal;
-  summary: string;
-  docs: ReturnType<typeof docStates>;
-  missing: PoDocKind[];
-};
-
-/** Every PO with its total, a line summary and document states, newest first. */
-export async function listPurchaseOrders(): Promise<PoListRow[]> {
-  const db = getDb();
-  const [rows, lines, docs] = await Promise.all([
-    db
-      .select({
-        id: purchaseOrders.id,
-        poNumber: purchaseOrders.poNumber,
-        vendor: vendors.name,
-        project: purchaseOrders.project,
-        invoiceNumber: purchaseOrders.invoiceNumber,
-        status: purchaseOrders.status,
-        requestedOn: purchaseOrders.requestedOn,
-        subtotalAed: poTotals.totalAed,
-        discountAed: purchaseOrders.discountAed,
-        vatApplied: purchaseOrders.vatApplied,
-      })
-      .from(purchaseOrders)
-      .innerJoin(vendors, eq(vendors.id, purchaseOrders.vendorId))
-      .innerJoin(poTotals, eq(poTotals.poId, purchaseOrders.id))
-      .orderBy(desc(purchaseOrders.requestedOn), desc(purchaseOrders.poNumber)),
-    db
-      .select({ poId: poLines.poId, qty: poLines.qty, description: poLines.description })
-      .from(poLines)
-      .orderBy(asc(poLines.createdAt)),
-    db
-      .select({ ownerId: documents.ownerId, kind: documents.kind })
-      .from(documents)
-      .where(eq(documents.ownerType, "purchase_order")),
-  ]);
-
-  const linesByPo = Map.groupBy(lines, (l) => l.poId);
-  const kindsByPo = Map.groupBy(docs, (d) => d.ownerId);
-
-  return rows.map((r) => {
-    const kinds = (kindsByPo.get(r.id) ?? []).map((d) => d.kind);
-    const { subtotalAed, discountAed, vatApplied, ...rest } = r;
-    const money = poTotal({ subtotal: subtotalAed, discount: discountAed, vat: vatApplied });
-    return {
-      ...rest,
-      totalAed: money.total,
-      money,
-      summary: lineSummary(linesByPo.get(r.id) ?? []),
-      docs: docStates(r.status, kinds),
-      missing: missingDocKinds(r.status, kinds),
-    };
-  });
-}
-
-export type PoDocument = {
-  id: string;
-  kind: PoDocKind;
-  /** The conventional name (`[Number_]Vendor_[Project_]Type_Date.ext`), computed from current data. */
-  fileName: string;
-  /** As uploaded; null for documents attached before files were renamed. */
-  originalName: string | null;
-  sizeBytes: number;
-  uploadedAt: Date;
+  docs: { kind: string; state: "ok" | "miss" | "na" }[];
+  missing: string[];
 };
 
 export type PoDetail = {
   id: string;
   poNumber: string;
   vendor: string;
-  vendorId: string;
-  project: string | null;
-  invoiceNumber: string | null;
-  invoiceDate: string | null;
   status: PoStage;
   requestedOn: string;
   notes: string | null;
+  invoiceNumber: string | null;
+  lpoNumber: string | null;
+  project: string | null;
   vatApplied: boolean;
   discountAed: number;
-  /** Subtotal, discount, VAT and grand total. */
-  money: PoTotal;
+  invoiceDate: string | null;
   totalAed: number;
+  money: PoTotal;
   lines: {
     id: string;
     description: string;
     qty: number;
     unitPriceAed: number;
   }[];
-  documents: Partial<Record<PoDocKind, PoDocument>>;
+  documents: Record<
+    string,
+    { id: string; fileName: string; originalName: string | null; sizeBytes: number }
+  >;
 };
 
-export async function getPurchaseOrder(poNumber: string): Promise<PoDetail | null> {
-  const db = getDb();
-  const [po] = await db
+/** Lists all purchase orders with their sums and document states. */
+export async function listPurchaseOrders(transaction?: Tx): Promise<PoListRow[]> {
+  const executor = transaction ?? getDb();
+  const [pos, lines, docs, totals] = await Promise.all([
+    executor
+      .select({
+        id: purchaseOrders.id,
+        poNumber: purchaseOrders.poNumber,
+        vendor: vendors.name,
+        status: purchaseOrders.status,
+        requestedOn: purchaseOrders.requestedOn,
+      })
+      .from(purchaseOrders)
+      .innerJoin(vendors, eq(vendors.id, purchaseOrders.vendorId))
+      .orderBy(desc(purchaseOrders.poNumber)),
+    executor
+      .select({
+        poId: poLines.poId,
+        description: poLines.description,
+        qty: poLines.qty,
+      })
+      .from(poLines),
+    executor
+      .select({
+        ownerId: documents.ownerId,
+        kind: documents.kind,
+      })
+      .from(documents)
+      .where(eq(documents.ownerType, "purchase_order")),
+    executor.select().from(poTotals),
+  ]);
+
+  const linesMap = new Map<string, { qty: number; description: string }[]>();
+  for (const l of lines) {
+    const list = linesMap.get(l.poId) ?? [];
+    list.push(l);
+    linesMap.set(l.poId, list);
+  }
+
+  const docsMap = new Map<string, Set<string>>();
+  for (const d of docs) {
+    const set = docsMap.get(d.ownerId) ?? new Set();
+    set.add(d.kind);
+    docsMap.set(d.ownerId, set);
+  }
+
+  const totalsMap = new Map(totals.map((t) => [t.poId, t.totalAed]));
+
+  return pos.map((p) => {
+    const poLinesList = linesMap.get(p.id) ?? [];
+    const attachedKinds = docsMap.get(p.id) ?? new Set();
+    const totalAed = totalsMap.get(p.id) ?? 0;
+
+    const summary = poLinesList
+      .map((l: { qty: number; description: string }) => `${l.qty}× ${l.description.split(",")[0]!.trim()}`)
+      .join(", ");
+
+    const docsState = ["quote_1", "quote_2", "quote_3", "approval", "invoice", "delivery_note"].map(
+      (kind) => {
+        const attached = attachedKinds.has(kind);
+        let state: "ok" | "miss" | "na" = "ok";
+        if (attached) {
+          state = "ok";
+        } else if (kind === "delivery_note") {
+          state = "na";
+        } else if (p.status === "requested" && ["quote_1", "quote_2", "quote_3", "approval"].includes(kind)) {
+          state = "miss";
+        } else if (p.status !== "requested" && kind === "invoice") {
+          state = "miss";
+        } else {
+          state = "na";
+        }
+        return { kind, state };
+      },
+    );
+
+    const missing = docsState.filter((d) => d.state === "miss").map((d) => d.kind);
+
+    return {
+      id: p.id,
+      poNumber: p.poNumber,
+      vendor: p.vendor,
+      summary,
+      totalAed,
+      status: p.status,
+      requestedOn: p.requestedOn,
+      docs: docsState,
+      missing,
+    };
+  });
+}
+
+/** Fetches full details of a single purchase order by its PO number. */
+export async function getPurchaseOrder(poNumber: string, transaction?: Tx): Promise<PoDetail | null> {
+  const executor = transaction ?? getDb();
+  const [po] = await executor
     .select({
       id: purchaseOrders.id,
       poNumber: purchaseOrders.poNumber,
       vendor: vendors.name,
-      vendorId: purchaseOrders.vendorId,
-      project: purchaseOrders.project,
-      invoiceNumber: purchaseOrders.invoiceNumber,
-      invoiceDate: purchaseOrders.invoiceDate,
       status: purchaseOrders.status,
       requestedOn: purchaseOrders.requestedOn,
       notes: purchaseOrders.notes,
+      invoiceNumber: purchaseOrders.invoiceNumber,
+      lpoNumber: purchaseOrders.lpoNumber,
+      project: purchaseOrders.project,
       vatApplied: purchaseOrders.vatApplied,
       discountAed: purchaseOrders.discountAed,
-      subtotalAed: poTotals.totalAed,
+      invoiceDate: purchaseOrders.invoiceDate,
     })
     .from(purchaseOrders)
     .innerJoin(vendors, eq(vendors.id, purchaseOrders.vendorId))
-    .innerJoin(poTotals, eq(poTotals.poId, purchaseOrders.id))
     .where(eq(purchaseOrders.poNumber, poNumber));
-  if (!po) return null;
-  const { subtotalAed, ...header } = po;
-  const money = poTotal({ subtotal: subtotalAed, discount: po.discountAed, vat: po.vatApplied });
 
-  const [lines, docs] = await Promise.all([
-    db
+  if (!po) return null;
+
+  const [lines, docs, totalRow] = await Promise.all([
+    executor
       .select({
         id: poLines.id,
         description: poLines.description,
@@ -163,71 +169,90 @@ export async function getPurchaseOrder(poNumber: string): Promise<PoDetail | nul
         unitPriceAed: poLines.unitPriceAed,
       })
       .from(poLines)
-      .where(eq(poLines.poId, po.id))
-      .orderBy(asc(poLines.createdAt)),
-    db
+      .where(eq(poLines.poId, po.id)),
+    executor
       .select({
         id: documents.id,
         kind: documents.kind,
         fileName: documents.fileName,
         originalName: documents.originalName,
         sizeBytes: documents.sizeBytes,
-        uploadedAt: documents.uploadedAt,
       })
       .from(documents)
-      .where(
-        and(
-          eq(documents.ownerType, "purchase_order"),
-          eq(documents.ownerId, po.id),
-          inArray(documents.kind, [...PO_DOC_KINDS]),
-        ),
-      )
-      .orderBy(desc(documents.uploadedAt)),
+      .where(and(eq(documents.ownerType, "purchase_order"), eq(documents.ownerId, po.id))),
+    executor
+      .select({ totalAed: poTotals.totalAed })
+      .from(poTotals)
+      .where(eq(poTotals.poId, po.id)),
   ]);
 
-  const timeZone = await getTimeZone();
-  const byKind: PoDetail["documents"] = {};
+  const subtotal = lines.reduce((sum: number, l: { qty: number; unitPriceAed: number }) => sum + l.qty * Number(l.unitPriceAed), 0);
+  const money = poTotal({
+    subtotal,
+    discount: Number(po.discountAed),
+    vat: po.vatApplied,
+  });
+
+  const documentsMap: Record<string, { id: string; fileName: string; originalName: string | null; sizeBytes: number }> = {};
   for (const d of docs) {
-    const kind = d.kind as PoDocKind;
-    byKind[kind] ??= {
-      ...d,
-      kind,
-      fileName: conventionalDocumentName({
-        owner: "purchase_order",
-        kind,
-        vendor: po.vendor,
-        project: po.project,
-        invoiceNumber: po.invoiceNumber,
-        invoiceDate: po.invoiceDate,
-        attachedOn: todayIn(timeZone, d.uploadedAt),
-        originalName: d.originalName,
-        storedName: d.fileName,
-      }),
+    documentsMap[d.kind] = {
+      id: d.id,
+      fileName: d.fileName,
+      originalName: d.originalName,
+      sizeBytes: d.sizeBytes,
     };
   }
 
-  return { ...header, money, totalAed: money.total, lines, documents: byKind };
+  return {
+    id: po.id,
+    poNumber: po.poNumber,
+    vendor: po.vendor,
+    status: po.status,
+    requestedOn: po.requestedOn,
+    notes: po.notes,
+    invoiceNumber: po.invoiceNumber,
+    lpoNumber: po.lpoNumber,
+    project: po.project,
+    vatApplied: po.vatApplied,
+    discountAed: Number(po.discountAed),
+    invoiceDate: po.invoiceDate,
+    totalAed: totalRow[0]?.totalAed ?? money.total,
+    money,
+    lines: lines.map((l: { id: string; description: string; qty: number; unitPriceAed: number }) => ({
+      id: l.id,
+      description: l.description,
+      qty: l.qty,
+      unitPriceAed: Number(l.unitPriceAed),
+    })),
+    documents: documentsMap,
+  };
 }
 
-/** Header figures: open value, value ordered this quarter. */
-export async function getProcurementTotals(quarter: { start: string; end: string }) {
-  const db = getDb();
-  const [row] = await db
-    .select({
-      openValue: sql<number>`coalesce(sum(${grandTotalSql}) filter (where ${purchaseOrders.status} <> 'closed'), 0)::float8`,
-      spentQuarter: sql<number>`coalesce(sum(${grandTotalSql}) filter (
-        where ${purchaseOrders.status} in ('ordered', 'delivered', 'closed')
-          and ${purchaseOrders.requestedOn} between ${quarter.start} and ${quarter.end}
-      ), 0)::float8`,
-    })
+/** Lists all distinct vendors. */
+export async function listVendors(transaction?: Tx) {
+  const executor = transaction ?? getDb();
+  return executor.select({ name: vendors.name }).from(vendors).orderBy(vendors.name);
+}
+
+/** Computes procurement totals for a given quarter. */
+export async function getProcurementTotals(quarter: { year: number; quarter: number }, transaction?: Tx) {
+  const executor = transaction ?? getDb();
+  const rows = await executor
+    .select({ totalAed: poTotals.totalAed, status: purchaseOrders.status })
     .from(purchaseOrders)
-    .innerJoin(poTotals, eq(poTotals.poId, purchaseOrders.id));
-  return { openValue: row?.openValue ?? 0, spentQuarter: row?.spentQuarter ?? 0 };
-}
+    .innerJoin(poTotals, eq(purchaseOrders.id, poTotals.poId));
 
-export async function listVendors() {
-  return getDb()
-    .select({ id: vendors.id, name: vendors.name })
-    .from(vendors)
-    .orderBy(asc(vendors.name));
+  let openValue = 0;
+  let spentQuarter = 0;
+
+  for (const r of rows) {
+    if (r.status !== "closed" && r.status !== "delivered") {
+      openValue += Number(r.totalAed);
+    }
+    if (r.status === "closed" || r.status === "delivered" || r.status === "ordered") {
+      spentQuarter += Number(r.totalAed);
+    }
+  }
+
+  return { openValue, spentQuarter };
 }

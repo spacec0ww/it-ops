@@ -60,6 +60,7 @@ export const poInput = z.object({
     .nullable()
     .transform((v) => v || null),
   invoiceNumber: optionalText(60),
+  lpoNumber: optionalText(60),
   project: optionalText(120),
   vatApplied: z.boolean().optional().default(false),
   discountAed: z.coerce
@@ -169,6 +170,7 @@ export async function createPo(
       requestedOn: data.requestedOn,
       notes: data.notes,
       invoiceNumber: data.invoiceNumber,
+      lpoNumber: data.lpoNumber,
       project: data.project,
       vatApplied: data.vatApplied,
       discountAed: data.discountAed,
@@ -214,6 +216,7 @@ export async function updatePo(tx: Tx, input: z.input<typeof poUpdateInput>): Pr
       requestedOn: data.requestedOn,
       notes: data.notes,
       invoiceNumber: data.invoiceNumber,
+      lpoNumber: data.lpoNumber,
       project: data.project,
       vatApplied: data.vatApplied,
       discountAed: data.discountAed,
@@ -233,9 +236,7 @@ export async function updatePo(tx: Tx, input: z.input<typeof poUpdateInput>): Pr
 }
 
 /**
- * Refuses to close purchases that are missing any of the approval, invoice and delivery note
- * (owner rule). Every route to Closed goes through this: the Close button, the bulk
- * "Close delivered" action and the status field in the Edit dialog.
+ * Refuses to close purchases that are missing any required documents (3 quotes, approval, invoice).
  */
 async function assertCanClose(tx: Tx, poIds: string[]): Promise<void> {
   if (!poIds.length) return;
@@ -260,7 +261,7 @@ async function assertCanClose(tx: Tx, poIds: string[]): Promise<void> {
   if (pos.length === 1)
     throw new DomainError(`Upload ${docList(blocked[0]!.missing)} before closing this purchase.`);
   throw new DomainError(
-    `All three documents are needed to close a purchase. Missing: ${blocked
+    `Required documents are missing to close purchases: ${blocked
       .map((b) => `${b.poNumber} (${b.missing.map((k) => DOC_LABEL[k].toLowerCase()).join(", ")})`)
       .join("; ")}.`,
   );
@@ -278,7 +279,7 @@ export async function advancePo(tx: Tx, input: z.input<typeof advanceInput>): Pr
   if (nextManualStage(po.status) !== to) {
     throw new DomainError(
       po.status === "requested"
-        ? "Attach the approval file to move this purchase to Approved."
+        ? "Attach the 3 quotations and approval file to move this purchase."
         : "That stage change isn’t allowed.",
     );
   }
@@ -289,8 +290,7 @@ export async function advancePo(tx: Tx, input: z.input<typeof advanceInput>): Pr
 export const bulkPoInput = z.object({ poIds: z.array(z.uuid()).min(1).max(200) });
 
 /**
- * Closes several delivered purchases in one transaction (B-16). Every one must be delivered,
- * so the one-step stage rule holds; otherwise nothing changes and the error names the rest.
+ * Closes several delivered purchases in one transaction.
  */
 export async function closeDeliveredPos(
   tx: Tx,
@@ -324,7 +324,6 @@ export async function closeDeliveredPos(
 
 /**
  * Undo for closeDeliveredPos: puts purchases that are still closed back to delivered.
- * Idempotent: ones already moved on are left alone.
  */
 export async function reopenClosedPos(tx: Tx, input: z.input<typeof bulkPoInput>): Promise<void> {
   const { poIds } = bulkPoInput.parse(input);
@@ -337,7 +336,6 @@ export async function reopenClosedPos(tx: Tx, input: z.input<typeof bulkPoInput>
 /**
  * Records an uploaded PO document, replacing any earlier one of the same kind.
  * Attaching an approval to a requested PO moves it to approved (business rule 1).
- * Returns the storage paths of replaced files so the caller can delete them.
  */
 export async function recordPoDocument(
   tx: Tx,
@@ -377,7 +375,6 @@ export async function recordPoDocument(
     )
     .returning({ storagePath: documents.storagePath });
 
-  // [Invoice-number_]Vendor_[Project_]Type_Date.ext (the date is the purchase's invoice date when set, else the attach date in the workspace time zone); -2, -3 … if that name is taken.
   const fileName = await freeDocumentName(
     tx,
     poDocumentStem(

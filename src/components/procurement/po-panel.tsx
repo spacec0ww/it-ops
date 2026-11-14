@@ -20,7 +20,7 @@ import { InvoiceDateEdit } from "./invoice-date-dialog";
 import { StageStatus } from "./stage-status";
 
 const COLS = "minmax(0, 1fr) 40px 104px 112px";
-const SLOT_ORDER = ["invoice", "delivery_note", "approval"] as const;
+const SLOT_ORDER = ["quote_1", "quote_2", "quote_3", "approval", "invoice", "delivery_note"] as const;
 
 export function PoPanel({
   po,
@@ -33,7 +33,7 @@ export function PoPanel({
 }) {
   const current = stageIndex(po.status);
   const next = nextManualStage(po.status);
-  // Closing needs the approval, invoice and delivery note (the server enforces it too).
+  // Closing needs the quotations, approval, and invoice (delivery note is optional).
   const missingForClose = next === "closed" ? missingToClose(Object.keys(po.documents)) : [];
 
   return (
@@ -53,6 +53,7 @@ export function PoPanel({
                 requestedOn: po.requestedOn,
                 notes: po.notes,
                 invoiceNumber: po.invoiceNumber,
+                lpoNumber: po.lpoNumber, // <-- Corrected from po.poNumber
                 vatApplied: po.vatApplied,
                 discountAed: po.discountAed,
                 project: po.project,
@@ -85,7 +86,7 @@ export function PoPanel({
         </ol>
         {po.status === "requested" ? (
           <p className="m-0 text-[12px] text-ink3">
-            Attach the signed approval file below and this PO moves to Approved.
+            Attach the 3 quotations and signed approval file below to proceed.
           </p>
         ) : next ? (
           <div className="row">
@@ -110,6 +111,12 @@ export function PoPanel({
           <>
             <dt>Project</dt>
             <dd>{po.project}</dd>
+          </>
+        ) : null}
+        {po.lpoNumber ? (
+          <>
+            <dt>LPO number</dt>
+            <dd className="mono">{po.lpoNumber}</dd>
           </>
         ) : null}
         {po.invoiceNumber ? (

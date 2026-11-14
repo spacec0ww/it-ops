@@ -1,13 +1,16 @@
 // Names for newly uploaded documents: `Vendor_Type_Date.ext`. Pure functions.
-//   PO documents          Dell-Technologies_Invoice_2026-10-14.pdf
+//   PO documents      Dell-Technologies_Invoice_2026-10-14.pdf
 //   Subscription invoices e-Business-Mobile_Subscription_Invoice_2026-10.pdf
 // Download names are computed from current data when a file is downloaded.
 // The file the user picked keeps its own name in `documents.original_name`.
 
-export type NamedDocKind = "approval" | "delivery_note" | "invoice";
+export type NamedDocKind = "quote_1" | "quote_2" | "quote_3" | "approval" | "delivery_note" | "invoice";
 
 /** The document type as it appears in a file name. */
 export const DOC_TYPE_NAME: Record<NamedDocKind, string> = {
+  quote_1: "Quote-1",
+  quote_2: "Quote-2",
+  quote_3: "Quote-3",
   approval: "Approval",
   delivery_note: "Delivery-Note",
   invoice: "Invoice",

@@ -38,6 +38,7 @@ export type PoFormValues = {
   requestedOn: string;
   notes: string | null;
   invoiceNumber: string | null;
+  lpoNumber: string | null;
   vatApplied: boolean;
   discountAed: number;
   project: string | null;
@@ -83,6 +84,7 @@ export function PoFormDialog({
   const [requestedOn, setRequestedOn] = useState(initial?.requestedOn ?? today);
   const [notes, setNotes] = useState(initial?.notes ?? "");
   const [invoiceNumber, setInvoiceNumber] = useState(initial?.invoiceNumber ?? "");
+  const [lpoNumber, setLpoNumber] = useState(initial?.lpoNumber ?? "");
   const [vatApplied, setVatApplied] = useState(initial?.vatApplied ?? false);
   const [discount, setDiscount] = useState(
     initial && initial.discountAed > 0 ? String(initial.discountAed) : "",
@@ -134,6 +136,7 @@ export function PoFormDialog({
       requestedOn,
       notes,
       invoiceNumber,
+      lpoNumber,
       vatApplied,
       discountAed: discount.trim() ? discount : 0,
       project,
@@ -233,6 +236,20 @@ export function PoFormDialog({
         </div>
 
         <div className="form-grid">
+          <Field
+            label="LPO number"
+            htmlFor={`${ids}-lpono`}
+            hint="LPO reference provided by colleague"
+          >
+            <input
+              id={`${ids}-lpono`}
+              className="field"
+              maxLength={60}
+              value={lpoNumber}
+              onChange={(e) => setLpoNumber(e.target.value)}
+            />
+          </Field>
+          
           <Field
             label="Invoice number"
             htmlFor={`${ids}-invno`}

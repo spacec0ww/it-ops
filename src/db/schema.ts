@@ -40,7 +40,15 @@ export const docOwnerType = pgEnum("doc_owner_type", [
   "subscription_invoice",
   "note",
 ]);
-export const docKind = pgEnum("doc_kind", ["invoice", "delivery_note", "approval", "other"]);
+export const docKind = pgEnum("doc_kind", [
+  "quote_1",
+  "quote_2",
+  "quote_3",
+  "invoice",
+  "delivery_note",
+  "approval",
+  "other",
+]);
 export const invoiceKind = pgEnum("invoice_kind", ["renewal", "prorated"]);
 export const subKind = pgEnum("sub_kind", ["subscription", "contract"]);
 export const billingCycle = pgEnum("billing_cycle", ["monthly", "yearly"]);
@@ -112,7 +120,7 @@ export const purchaseOrders = pgTable(
     requestedOn: day().notNull(),
     notes: text(),
     /** Optional: leads the invoice file name. */
-    invoiceNumber: text(),
+    invoiceNumber: text(), lpoNumber: text(),
     /** Optional: part of every document file name. */
     project: text(),
     /** 5% VAT applies to the subtotal after the discount. */
