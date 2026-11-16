@@ -52,8 +52,7 @@ export function PoPanel({
     }
   };
 
-const handleRemove = async (kind: PoDocKind) => {
-    // quotes and other allowed kinds
+  const handleRemove = async (kind: PoDocKind) => {
     const res = await removePoFile({ poId: po.id, kind: kind as any });
     if (!res.ok) {
       alert(res.error || "Removal failed");
@@ -236,6 +235,7 @@ const handleRemove = async (kind: PoDocKind) => {
               notNeededUntil={STAGE_LABEL[DOC_REQUIRED_FROM[kind]].toLowerCase()}
               onUpload={(file) => handleUpload(kind, file)}
               onRemove={doc ? () => handleRemove(kind) : undefined}
+              onDownload={doc ? () => window.open(`/api/procurement/documents/${doc.id}`, "_blank") : undefined}
             />
           );
         })}
