@@ -8,7 +8,7 @@ export type DocSlotProps = {
   invoiceDate?: string | null;
   today?: string;
   status?: "ok" | "miss" | "na";
-  state?: "ok" | "miss" | "na"; // Added to support state prop from po-panel
+  state?: "ok" | "miss" | "na";
   doc?: { id: string; fileName: string; originalName: string | null; sizeBytes: number };
   notNeededUntil?: string;
   fileName?: string | null;
@@ -87,6 +87,7 @@ export function DocSlot({
               <input
                 type="file"
                 className="hidden"
+                accept=".pdf,.xlsx,.xls,.jpg,.jpeg,.png"
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   if (file) onUpload(file);
