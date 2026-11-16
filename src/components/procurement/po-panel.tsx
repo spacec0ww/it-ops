@@ -14,9 +14,11 @@ import {
   PO_STAGES,
   STAGE_LABEL,
   stageIndex,
+  type PoDocKind,
   type PoTotal,
 } from "@/lib/procurement";
 import type { PoDetail } from "@/lib/queries/procurement";
+import { attachPoDocument, removePoFile } from "@/app/(app)/procurement/actions";
 import { AdvanceStage, EditPurchase } from "./controls";
 import { DocSlot } from "./doc-slot";
 import { InvoiceDateEdit } from "./invoice-date-dialog";
@@ -37,6 +39,26 @@ export function PoPanel({
   const current = stageIndex(po.status);
   const next = nextManualStage(po.status);
   const missingForClose = next === "closed" ? missingToClose(Object.keys(po.documents)) : [];
+
+  const handleUpload = async (kind: PoDocKind, file: File) => {
+    const formData = new FormData();
+    formData.append("poId", po.id);
+    formData.append("kind", kind);
+    formData.append("file", file);
+    
+    const res = await attachPoDocument(formData);
+    if (!res.ok) {
+      alert(res.error || "Upload failed");
+    }
+  };
+
+const handleRemove = async (kind: PoDocKind) => {
+    // quotes and other allowed kinds
+    const res = await removePoFile({ poId: po.id, kind: kind as any });
+    if (!res.ok) {
+      alert(res.error || "Removal failed");
+    }
+  };
 
   return (
     <aside className="panel min-[1024px]:flex-[2_1_360px]" aria-label={`Purchase ${po.poNumber}`}>
@@ -212,6 +234,8 @@ export function PoPanel({
               state={docState(po.status, kind, Boolean(doc))}
               doc={doc}
               notNeededUntil={STAGE_LABEL[DOC_REQUIRED_FROM[kind]].toLowerCase()}
+              onUpload={(file) => handleUpload(kind, file)}
+              onRemove={doc ? () => handleRemove(kind) : undefined}
             />
           );
         })}
